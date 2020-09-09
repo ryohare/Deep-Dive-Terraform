@@ -1,22 +1,32 @@
 pipeline {
     agent any
     tools {
+        // makes this tool available for use within the pipeline
         "org.jenkinsci.plugins.terraform.TerraformInstallation" "terraform"
     }
     parameters {
+        // these are passed in when the build is started
         string(name: 'CONSUL_STATE_PATH', defaultValue: 'networking/state/globo-primary', description: 'Path in Consul for state data')
         string(name: 'WORKSPACE', defaultValue: 'development', description:'workspace to use in Terraform')
     }
 
     environment {
+        // find terraform within the env from the tools block
         TF_HOME = tool('terraform')
+        // no user input
         TF_INPUT = "0"
         TF_IN_AUTOMATION = "TRUE"
+        
+        // docker special DNS entry
         TF_VAR_consul_address = "host.docker.internal"
         TF_LOG = "WARN"
+
+        // credentials from the credential jenkins provider
         CONSUL_HTTP_TOKEN = credentials('networking_consul_token')
         AWS_ACCESS_KEY_ID = credentials('aws_access_key')
         AWS_SECRET_ACCESS_KEY = credentials('aws_secret_access_key')
+        
+        // put terraform on path
         PATH = "$TF_HOME:$PATH"
     }
 
@@ -25,6 +35,9 @@ pipeline {
             steps {
                 dir('m8/networking/'){
                     sh 'terraform --version'
+
+                    // reference the passed in parameters here.
+                    sh "echo $CONSUL_HTTP_TOKEN"
                     sh "terraform init --backend-config='path=${params.CONSUL_STATE_PATH}'"
                 }
             }
@@ -40,12 +53,16 @@ pipeline {
             steps {
                 dir('m8/networking/'){
                     script {
+                        // try catch to create new workspace, else
+                        // select the previously created on
                         try {
                            sh "terraform workspace new ${params.WORKSPACE}"
                         } catch (err) {
                             sh "terraform workspace select ${params.WORKSPACE}"
                         }
                         sh "terraform plan -out terraform-networking.tfplan;echo \$? > status"
+                        
+                        // cache an artifact for later use
                         stash name: "terraform-networking-plan", includes: "terraform-networking.tfplan"
                     }
                 }
@@ -67,6 +84,7 @@ pipeline {
                     }
                     if(apply){
                         dir('m8/networking/'){
+                            // pop the plan into the local file system
                             unstash "terraform-networking-plan"
                             sh 'terraform apply terraform-networking.tfplan'
                         }
