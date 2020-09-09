@@ -37,7 +37,7 @@ pipeline {
                     sh 'terraform --version'
 
                     // reference the passed in parameters here.
-                    sh "echo $CONSUL_HTTP_TOKEN"
+                    sh "echo \$CONSUL_HTTP_TOKEN"
                     sh "terraform init --backend-config='path=${params.CONSUL_STATE_PATH}'"
                 }
             }
